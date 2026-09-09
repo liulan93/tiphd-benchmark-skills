@@ -1,0 +1,34 @@
+Package: PIPET
+Title: Phenotypic Information Based on Bulk Data Predicts Relevant Subpopulations in Single Cell Data
+Version: 0.1.0
+Authors@R: 
+    person(given = "Xinjia", 
+           family = "Ruan", 
+           role = c("aut", "cre"),
+           email = "ruan.cpu@foxmail.com")
+Description: PIPET predicts relevant subpopulations in single-cell data from phenotypic information in bulk data. Core prediction functions only depend on Matrix, Seurat, and matrixStats. Visualization and marker-extraction utilities require tidyverse, DESeq2, survminer (moved to Suggests).
+License: GPL (>= 3)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports: 
+    Matrix,
+    matrixStats,
+    parallel,
+    Seurat,
+    stats,
+    tibble
+Depends: 
+    R (>= 4.3.1)
+Suggests:
+    cowplot,
+    DESeq2,
+    ggplot2,
+    survival,
+    survminer,
+    tidyverse,
+    reshape2,
+    knitr,
+    rmarkdown
+LazyData: true
+VignetteBuilder: knitr

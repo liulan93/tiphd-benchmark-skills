@@ -1,0 +1,27 @@
+# TiPhD Benchmark — 统计学习 Python 环境（conda）
+# 环境名: tiphd-stats
+# 用法: conda env create -f environment-tirank.yml
+# 适用工具: TiRank（Cox + 聚类 + 图模型）/ scPER MAGIC 插补
+# 约束: numpy<2, pandas<2（TiRank / magic-impute 兼容性）
+# 与 environment.yml (深度学习环境) 并存，不冲突。
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - numpy<2          # TiRank/scPER MAGIC 兼容
+  - pandas<2
+  - scipy
+  - scikit-learn
+  - pytorch          # CPU 版
+  - cpuonly
+  - pip:
+      - anndata
+      - scanpy
+      - lifelines       # TiRank Cox PH 拟合
+      - optuna          # TiRank 超参搜索
+      - leidenalg       # TiRank 聚类
+      - python-igraph   # leidenalg 后端
+      - magic-impute    # scPER 的 MAGIC 插补

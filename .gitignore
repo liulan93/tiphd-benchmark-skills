@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# R
+.Rhistory
+.RData
+.Rapp.history
+
+# Generated results / data (downloaded via setup-data, produced by batch runs)
+data/
+results/
+*.log
+_nohup.log
+_rerun*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
