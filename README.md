@@ -42,14 +42,25 @@ A benchmark suite for evaluating **16 single-cell phenotype-association and bulk
 
 \* MuSiC is grouped with deconvolution outputs in this benchmark.
 
+## Installation
+
+Clone the repository into your `.claude/skills/` directory. The repository root contains a `SKILL.md`, so the cloned folder itself is discovered as one skill (`tiphd-benchmark-skills`); that root skill documents and routes to the 16 algorithm skills and the bootstrap skills inside it.
+
+```bash
+cd ~/.claude/skills
+git clone https://github.com/liulan93/tiphd-benchmark-skills.git
+```
+
+The resulting layout is `.claude/skills/tiphd-benchmark-skills/<algorithm>/SKILL.md`. If you prefer the algorithm folders themselves to be top-level skills, copy or move the repository contents (all subfolders + `_toolkit`) directly into `~/.claude/skills/` instead.
+
 ## Quick start
 
 ```bash
-# 1. Install environments (R 4.4/Seurat 5, tiphd-torch, tiphd-stats conda envs)
-#    (invoke the setup-env skill, or run _toolkit/install_*.{R,sh})
+# 1. Install environments (R 4.4/Seurat 5, tiphd-torch, tiphd-stats, tiphd-py310)
+#    follow setup-env/SKILL.md, or run _toolkit/install_*.{R,sh}
 
 # 2. Download data to ./data
-#    (invoke the setup-data skill; requires `pip install modelscope`)
+#    follow setup-data/SKILL.md (requires `pip install modelscope`)
 
 # 3. Run an algorithm, e.g. MuSiC
 cd music
