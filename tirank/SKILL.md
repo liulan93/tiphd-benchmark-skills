@@ -16,7 +16,7 @@ TiRank aligns bulk and single-cell data using relative-expression-ordering (REO)
 | Output | Cell-level labels: Rank+ / Rank- / Background |
 | Permutation | Cell-level (Cox PH) in evaluate.R |
 | plus-only | No |
-| GPU | Auto-detected (Optuna search + training run on CUDA if available) |
+| GPU | Opt-in: set `TIRANK_GPU=1` (and use an env with a CUDA build of PyTorch). Without it the run script hides CUDA and runs CPU. |
 
 ## Dependencies
 
@@ -68,14 +68,42 @@ pip install timm imbalanced-learn
 | Input data | `<cwd>/data/` | `TIPHD_DATA_DIR` |
 | Output | `<cwd>/results/TiRank/<cancer>/` | `TIPHD_OUT_DIR` |
 
+## Input contract — bulk clinical table MUST be exactly two columns
+
+TiRank picks clinical columns **by position**, not by name: the gene-pair
+extractor uses `clinical_data.columns[0:2]` while the Cox training split uses
+`iloc[:, -2:]`. The pipeline therefore requires the bulk clinical CSV to be
+exactly `[survival_time, event]` in that order. Several raw clinical tables in
+the wild (and in the TiPhD data: HCC/CRC/GC) ship extra columns (age, gender,
+stage, …), which silently produce wrong column pairs.
+
+The run script performs **input alignment only**: it trims the clinical table
+to the `tcol`/`scol` configured per cancer in `_toolkit/config.py`. No values
+or model hyperparameters are changed. When running on custom data, either
+pre-trim the clinical CSV to two columns yourself or register the time/event
+column names in `config.py`.
+
+A second trap: the upstream TiRank extractor wraps every per-gene Cox fit in
+`try/except Exception: continue`, so any Cox failure (wrong columns, bad event
+encoding, dtype issues) is swallowed and only surfaces much later as
+`There are 0 Risk genes and 0 Protective genes`. If you see that error,
+**first verify the clinical table** (manually reproduce one
+`lifelines.CoxPHFitter.fit` to see the real exception) — do not assume weak
+signal.
+
 ## Running the Pipeline
 
 ```bash
 cd skills/tirank
 
-# Full benchmark with the tiphd-stats interpreter
+# Full benchmark with the tiphd-stats interpreter (CPU)
 conda activate tiphd-stats
 python batch_run.py
+
+# GPU: the env must contain a CUDA build of PyTorch (the default
+# environment-tirank.yml installs the CPU-only build), then opt in:
+TIRANK_GPU=1 python batch_run.py
+
 # Evaluation (R)
 conda activate tiphd-r
 Rscript evaluate.R
@@ -93,27 +121,34 @@ python run_TiRank_pair.py <cancer> <sc_name> <bulk_name>
 
 ## Notes
 
-- TiRank performs preprocessing (QC, normalization, Leiden clustering), REO gene-pair extraction, hyperparameter search (`n_trials=10` via Optuna), and prediction per pair.
-- On CPU, hyperparameter search + training is slow; the official recommendation is a GPU. The run script auto-detects CUDA.
-- The run script uses a relaxed gene-pair threshold (`p_value_threshold=0.2`, `top_var_genes=3000`) so that extraction succeeds on datasets with weak bulk-survival signal. If you still hit `A set of genes is empty` / `0 Risk genes`, loosen the p-value threshold further or increase `top_var_genes`.
+- Per pair TiRank runs preprocessing (QC, normalization, Leiden clustering), REO gene-pair extraction, Optuna hyperparameter search (`n_trials=10`, 100 epochs each), and prediction. Runtime scales with cell count and varies widely across datasets.
+- GPU is **opt-in**: the run script forces `CUDA_VISIBLE_DEVICES=""` unless `TIRANK_GPU=1` is set, and the conda env must actually contain a CUDA build of PyTorch (the shipped `environment-tirank.yml` installs `cpuonly`). GPU mainly accelerates the Optuna search and training.
+- The run script uses a relaxed gene-pair threshold (`p_value_threshold=0.2`, `top_var_genes=3000`) so that extraction succeeds on datasets with weak bulk-survival signal. This is the skill's preset, not an upstream default — do not loosen it further without explicit user approval (it changes model inputs).
+- Dense `.h5ad` inputs are streamed in backed mode and converted to CSR at load time. This changes memory layout only, not values, so very large dense matrices do not have to be expanded in RAM.
+- Intermediate artifacts go to a per-pair temp directory that is deleted on exit. Do not remove `$TMPDIR/TiRank_*` while a pair is running — the prediction stage reads back a pickle written during tuning.
 
 ## Dataset Size and Timeout
 
-The default per-pair timeout is **7200s** (configurable via `TIPHD_PAIR_TIMEOUT`). GC (~137K cells) pairs are the slowest. If a pair times out, run it directly:
+The default per-pair timeout is **7200s** (configurable via `TIPHD_PAIR_TIMEOUT`). GC (~137K cells) pairs are the slowest. If a pair times out, run it directly (preferably with GPU enabled):
 
 ```bash
-python run_TiRank_pair.py GC GSE183904 GSETCGA
+TIRANK_GPU=1 python run_TiRank_pair.py GC GSE183904 GSETCGA
 ```
+
+There is no checkpoint: killing a pair discards all tuning/training progress and the pair restarts from scratch (finished pairs are skipped via their output CSV, so batch reruns only redo missing ones).
 
 ## Troubleshooting
 
 | Error | Cause / Fix |
 |-------|------------|
-| `ModuleNotFoundError: lifelines/optuna/leidenalg/igraph/timm/gseapy` | Install in tiphd-stats: `pip install lifelines optuna timm gseapy`; leidenalg/igraph via `conda install -c conda-forge python-igraph leidenalg` |
-| `No module named 'tirank'` | The TiRank source is added to PYTHONPATH by batch_run.py; run via `batch_run.py` or set `PYTHONPATH` to `third_party/python/TiRank` |
-| `A set of genes is empty` / `0 Risk genes` | Weak bulk-survival signal; loosen p-value threshold or increase `top_var_genes` |
-| numpy/pandas version errors | Ensure `numpy<2, pandas<2` in tiphd-stats |
-| `TIMEOUT (>7200s)` | CPU training is slow; run directly or use a GPU |
+| `ModuleNotFoundError: lifelines/optuna/leidenalg/igraph/timm/gseapy` | Install in the TiRank env: `pip install lifelines optuna timm gseapy`; leidenalg/igraph via `conda install -c conda-forge python-igraph leidenalg` |
+| `No module named 'tirank'` | The TiRank source is added to `sys.path` by the run script and needs no install; run via `batch_run.py`/`run_TiRank_pair.py` from the skill folder |
+| `There are 0 Risk genes and 0 Protective genes` / `A set of genes is empty` | **First suspect the clinical table, not weak signal.** Cox fits failing inside the extractor's `try/except Exception: continue` are reported as "no significant genes". Checks, in order: (1) the bulk clinical CSV must be exactly `[time, event]` — the run script auto-trims the TiPhD files via `config.py` tcol/scol; custom data needs the same; (2) reproduce one `CoxPHFitter().fit(df, duration_col=…, event_col=…)` manually to see the swallowed exception; (3) only after the input checks out, discuss thresholds with the user (changing `p_value_threshold`/`top_var_genes` is a model-input change, not a free fix) |
+| `TypeError`/`AttributeError` from pandas inside `GPextractor` (e.g. `DataFrame.append`) | pandas ≥ 2 removed `DataFrame.append`; the bundled TiRank source is patched to list-collect rows. On an unpatched TiRank copy, either stay on `pandas<2` or apply the equivalent list-collection fix |
+| numpy/pandas version errors | The shipped env pins `numpy<2, pandas<2`; the patched bundled source is compatible with pandas 2.x — pick one env and keep it consistent |
+| GPU not used despite `TIRANK_GPU=1` | The env's PyTorch must be a CUDA build (`python -c "import torch;print(torch.cuda.is_available())"`); the default `environment-tirank.yml` installs `cpuonly` — replace it with a CUDA-matching pytorch build |
+| `TIMEOUT (>7200s)` | CPU training is slow; run the pair directly or use a GPU (`TIRANK_GPU=1` + CUDA pytorch in the env) |
+| Process dies right after reading the `.h5ad`, no traceback | Likely an OS-level OOM kill from dense `X` expansion. The run script already streams dense HDF5 as CSR; check available RAM and that you are running the bundled run script |
 
 ## Scope
 

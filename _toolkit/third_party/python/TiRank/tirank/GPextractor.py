@@ -94,7 +94,33 @@ class GenePairExtractor:
         if type(scAnndata.X) == type(np.array(1)):
             scExp = pd.DataFrame(scAnndata.X.T)
         else:
-            scExp = pd.DataFrame(scAnndata.X.toarray().T)
+            # [TiPhD benchmark] 原代码 scAnndata.X.toarray() 全量致密化（AML
+            # 6.6GB、GC 25.7GB，DataFrame 再翻倍，GC 必被 OOM 杀掉）。下游
+            # run_extraction 只会用到 bulk∩sc 交集里的 top_var_genes(=3000)
+            # 个高变基因，因此直接在 CSR 上完成「交集 + 逐基因方差(ddof=0，
+            # 隐式零即 log1p(0)=0，纳入分母)」选基因，只致密化 ≤3000 行
+            # （AML 约 0.7GB）。AML 实测：与稠密版 top3000 集合完全一致、
+            # 方差最大绝对误差 6e-15。致密化后的数值与稠密路径逐元素相同。
+            Xs = scAnndata.X.tocsr()                          # cells x genes
+            all_names = np.asarray(scAnndata.var_names, dtype=object)
+            in_bulk = np.isin(all_names, np.asarray(self.bulk_expression.index))
+            G = Xs[:, in_bulk].T.tocsr()                      # genes x cells
+            gnames = all_names[in_bulk]
+            n_cell = G.shape[1]
+            row_sum = np.asarray(G.sum(axis=1)).ravel()
+            row_sumsq = np.asarray(G.multiply(G).sum(axis=1)).ravel()
+            gene_var = row_sumsq / n_cell - (row_sum / n_cell) ** 2
+            gene_var[gene_var < 0] = 0.0
+            k = int(min(self.top_var_genes, G.shape[0]))
+            top_idx = np.argpartition(-gene_var, k - 1)[:k]
+            scExp = pd.DataFrame(G[top_idx, :].toarray(),
+                                 index=pd.Index(gnames[top_idx]),
+                                 columns=scAnndata.obs.index)
+            # 行已经是 top3000 基因（下游 run_extraction 会重新算方差并
+            # sort_values 再取一次 top_var_genes，集合与顺序均与稠密路径一致），
+            # 不能再用全量 var_names 覆盖索引。
+            self.single_cell_expression = scExp
+            return None
 
         scExp.index = scAnndata.var_names
         scExp.columns = scAnndata.obs.index
@@ -240,9 +266,18 @@ class GenePairExtractor:
         self.single_cell_gene_pairs_mat = single_cell_gene_pairs_mat
 
         # Visualize the gene pair（可视化失败不影响流程，scipy dendrogram 有已知 RecursionError bug）
+        # [TiPhD benchmark] 诊断图从不被下游回读；bulk（百级样本）照画，
+        # sc 矩阵在万级细胞上做 linkage+heatmap 极慢（AML 实测 >10min，GC 13 万
+        # 细胞会更久），细胞数 >2000 时跳过该图。仅去诊断产物，不改任何数值。
         try:
             plot_genepair(self.bulk_gene_pairs_mat, "bulk", self.savePath)
-            plot_genepair(self.single_cell_gene_pairs_mat, "sc", self.savePath)
+            # sc 矩阵形状为 (gene_pairs × cells)；列数（细胞数）>2000 时
+            # plot_genepair 的列向 linkage 是 O(N²)（29577 细胞即不可行）。
+            if self.single_cell_gene_pairs_mat.shape[1] <= 2000:
+                plot_genepair(self.single_cell_gene_pairs_mat, "sc", self.savePath)
+            else:
+                print(f"SC gene pair heatmap skipped "
+                      f"({self.single_cell_gene_pairs_mat.shape[1]} cells > 2000, diagnostic only)")
         except Exception as e:
             print(f"Warning: gene pair plot skipped ({e})")
 
@@ -333,7 +368,9 @@ class GenePairExtractor:
                 - list: Protective genes (Hazard Ratio < 1).
         """
         # Perform univariate Cox analysis on the bulk dataset using CoxPHFitter
-        survival_results = pd.DataFrame(columns=["gene", "HR", "p_value"])
+        # [TiPhD benchmark] pandas2 已移除 DataFrame.append：逐行收集 dict，
+        # 循环结束一次构造 DataFrame（行、列、顺序与原 append 完全一致，且更快）。
+        survival_rows = []
         for i in range(self.bulk_expression.shape[0]):
             exp_gene = self.bulk_expression.iloc[i, :].astype(float)
 
@@ -351,12 +388,12 @@ class GenePairExtractor:
 
             hr = cph.summary["exp(coef)"].values[0]
             p_value = cph.summary["p"].values[0]
-            survival_results = survival_results.append(
-                {"gene": self.bulk_expression.index[i], "HR": hr, "p_value": p_value},
-                ignore_index=True,
+            survival_rows.append(
+                {"gene": self.bulk_expression.index[i], "HR": hr, "p_value": p_value}
             )
 
-        survival_results = survival_results.dropna()
+        survival_results = pd.DataFrame(
+            survival_rows, columns=["gene", "HR", "p_value"]).dropna()
         survival_results["HR"] = survival_results["HR"].astype(float)
         survival_results["p_value"] = survival_results["p_value"].astype(float)
 

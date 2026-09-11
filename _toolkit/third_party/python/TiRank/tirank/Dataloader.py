@@ -287,7 +287,14 @@ def PackData(savePath, mode, infer_mode, batch_size = 1024):
     f.close()
     f = open(os.path.join(savePath_2, 'similarity_df.pkl'), 'rb')
     similarity_df = pickle.load(f)
-    f.close() 
+    f.close()
+    # [TiPhD benchmark] 兼容稀疏(CSR)存储：adj_A 以 scipy CSR 保存，
+    # TrainPre 按批致密化，参与 cosine_loss 的数值与稠密版完全一致。
+    import scipy.sparse as _sp
+    if isinstance(similarity_df, pd.DataFrame):
+        adj_A_csr = _sp.csr_matrix(similarity_df.values)
+    else:
+        adj_A_csr = similarity_df.tocsr()
 
     train_dataset_Bulk = BulkDataset(train_bulk_gene_pairs_mat, bulkClinical_train, mode=mode)
     val_dataset_Bulk = BulkDataset(val_bulkExp_gene_pairs_mat, bulkClinical_val, mode=mode)
@@ -296,7 +303,7 @@ def PackData(savePath, mode, infer_mode, batch_size = 1024):
     
     if infer_mode == "ST":
     # if infer_mode == "Spot":
-        adj_A = torch.from_numpy(similarity_df.values)
+        adj_A = adj_A_csr
         adj_B = None
         patholabels = scAnndata.obs["patho_class"]
 
@@ -305,7 +312,7 @@ def PackData(savePath, mode, infer_mode, batch_size = 1024):
 
     elif infer_mode == "SC":
     # elif infer_mode == "Cell":
-        adj_A = torch.from_numpy(similarity_df.values)
+        adj_A = adj_A_csr
         adj_B = None
         patholabels = None
 

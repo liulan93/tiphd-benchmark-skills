@@ -131,7 +131,8 @@ conda activate tiphd-stats
 
 - 装 `lifelines`(Cox PH) `optuna`(超参搜索) `leidenalg`+`python-igraph`(聚类) —— TiRank 必须
 - 装 `magic-impute` —— scPER 的 MAGIC 插补用
-- **Python 3.9 + numpy<2 + pandas<2**（TiRank/magic-impute 兼容性约束）
+- **Python 3.9 + numpy<2 + pandas<2**（TiRank/magic-impute 兼容性约束；随附 TiRank 源码已打 pandas 2 兼容补丁，在 pandas 2.x 环境亦可运行）
+- **默认装的是 CPU 版 PyTorch**（yml 含 `cpuonly`）。TiRank 想用 GPU 时：在该 env 内把 torch 换成与驱动匹配的 CUDA 版（移除 `cpuonly`），并在运行时设 `TIRANK_GPU=1`——run 脚本默认隐藏 CUDA，不设此变量一律走 CPU。
 
 ### 步骤 4b — 建 tiphd-py310 Conda 环境（Statescope，可选）
 
@@ -147,7 +148,7 @@ conda activate tiphd-py310
 pip install autogenes deap cachetools requests tqdm
 ```
 
-- **Python 3.10+**；装 CUDA 版 PyTorch 可启用 BLADE 的 GPU 加速。
+- **Python 3.10+**；**建议直接装 CUDA 版 PyTorch**——BLADE 的重计算在 CPU 上明显更慢，且细胞类型数很多的数据集开销很大（见 statescope/SKILL.md 的 Runtime and scaling）。
 
 ### 步骤 5 — 装 Python 自定义包
 

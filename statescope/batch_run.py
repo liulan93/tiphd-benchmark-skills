@@ -1,4 +1,4 @@
-"""Statescope 批量调度：逐配对独立进程运行 run_Statescope_pair.py（真·BLADE，输出 proportions）"""
+"""Statescope batch runner: invoke run_Statescope_pair.py in a separate subprocess per pair (BLADE; outputs proportions)"""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_toolkit"))
 import config

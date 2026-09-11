@@ -101,7 +101,13 @@ def Train_one_epoch(
         X_b = X_b.to(device)
 
         if adj_A is not None:
-            A = adj_A[idx, :][:, idx]
+            # [TiPhD benchmark] CSR 稀疏存储时按批致密化（数值与稠密版相同）
+            import scipy.sparse as _sp
+            if _sp.issparse(adj_A):
+                _idx = idx.detach().cpu().numpy()
+                A = torch.from_numpy(adj_A[_idx, :][:, _idx].toarray())
+            else:
+                A = adj_A[idx, :][:, idx]
             A = A.to(device)
 
         if adj_B is not None:
@@ -295,11 +301,23 @@ def Validate_model(
             X_b = X_b.to(device)
 
             if adj_A is not None:
-                A = adj_A[idx, :][:, idx]
+                # [TiPhD benchmark] CSR 稀疏存储时按批致密化（与 train_model
+                # 分支一致，数值与稠密版相同）
+                import scipy.sparse as _sp
+                if _sp.issparse(adj_A):
+                    _idx = idx.detach().cpu().numpy()
+                    A = torch.from_numpy(adj_A[_idx, :][:, _idx].toarray())
+                else:
+                    A = adj_A[idx, :][:, idx]
                 A = A.to(device)
 
             if adj_B is not None:
-                B = adj_B[idx, :][:, idx]
+                import scipy.sparse as _sp
+                if _sp.issparse(adj_B):
+                    _idx = idx.detach().cpu().numpy()
+                    B = torch.from_numpy(adj_B[_idx, :][:, _idx].toarray())
+                else:
+                    B = adj_B[idx, :][:, idx]
                 B = B.to(device)
 
             if pre_patho_labels is not None:

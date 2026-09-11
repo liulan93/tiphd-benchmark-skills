@@ -316,9 +316,9 @@ def compute_similarity(savePath, ann_data, calculate_distance=False):
 
     # Obtain the cell-cell similarity matrix
     cell_cell_similarity = ann_data.obsp['connectivities']
-    dense_similarity_matrix = cell_cell_similarity.toarray()
-    similarity_df = pd.DataFrame(
-        dense_similarity_matrix, columns=ann_data.obs_names, index=ann_data.obs_names)
+    # [TiPhD benchmark] 仅改存储：KNN connectivities 天然稀疏，直接保存 CSR，
+    # 不再稠密化成 N×N（GC 13.7 万细胞稠密矩阵约 152GB）。数值完全不变。
+    similarity_df = cell_cell_similarity.tocsr()
 
     if calculate_distance:
         # Obtain the spatial positions and calculate the Euclidean distances

@@ -109,9 +109,12 @@ def load_sc_data(path_to_sc_h5ead, savePath):
     if path_to_sc_h5ead.lower().endswith('.h5ad'):
         scAnndata = sc.read_h5ad(path_to_sc_h5ead)
 
-        with open(os.path.join(savePath_1, 'anndata.pkl'), 'wb') as f:
-            pickle.dump(scAnndata, f)
-        f.close()
+        # [TiPhD benchmark] 不再写 1_loaddata/anndata.pkl：该 checkpoint 在
+        # SC Cox 流程中从不被回读（下游用 2_preprocessing/scAnndata.pkl），
+        # 却是单对最大临时文件之一（AML 约 6GB，GC 约 30GB）。
+        # with open(os.path.join(savePath_1, 'anndata.pkl'), 'wb') as f:
+        #     pickle.dump(scAnndata, f)
+        # f.close()
 
     return scAnndata
 

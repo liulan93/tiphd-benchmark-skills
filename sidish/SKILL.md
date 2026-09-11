@@ -88,11 +88,13 @@ python run_SIDISH_pair.py <cancer> <sc_name> <bulk_name>
 
 ## Dataset Size and Timeout
 
-SIDISH trains a VAE + DeepCox per pair; CPU runtimes are long (roughly 30-90 min per pair depending on cell count). The default per-pair timeout is **7200s** (configurable via `TIPHD_PAIR_TIMEOUT`). GC (~137K cells) pairs are the slowest and should be run directly if they time out:
+SIDISH trains a VAE + DeepCox per pair (50 training epochs by default); runtimes scale with cell count and are much shorter on the auto-detected GPU. The default per-pair timeout is **7200s** (configurable via `TIPHD_PAIR_TIMEOUT`). GC (~137K cells) pairs are the slowest and should be run directly if they time out:
 
 ```bash
 python run_SIDISH_pair.py GC GSE183904 GSETCGA
 ```
+
+There is **no checkpoint**: killing a pair partway through training discards all epochs and the pair restarts from scratch (only pairs whose output CSV already exists are skipped). Launch long pairs from a resilient session. The run script streams dense `.h5ad` as CSR at load time, so very large dense matrices do not need to be expanded in RAM.
 
 ## Troubleshooting
 

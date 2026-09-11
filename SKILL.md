@@ -58,9 +58,9 @@ Determine `$ROOT` from the location of this SKILL.md (the cloned repo directory)
 ### 2. Install environments — follow `setup-env/SKILL.md`
 
 - R ≥ 4.4 + Seurat ≥ 5 (data is Seurat v5 Assay5 `.rds`)
-- `tiphd-torch` conda env (Python 3.9 + PyTorch) — most Python tools
-- `tiphd-stats` conda env (Python 3.9 + lifelines/optuna/leidenalg) — TiRank
-- `tiphd-py310` conda env (Python 3.10) — Statescope only
+- `tiphd-torch` conda env (Python 3.9 + PyTorch) — most Python tools (incl. SIDISH; auto-uses CUDA when a CUDA build is installed)
+- `tiphd-stats` conda env (Python 3.9 + lifelines/optuna/leidenalg) — TiRank. The shipped yml installs **CPU-only** PyTorch; for GPU install a CUDA-matching PyTorch build in this env and set `TIRANK_GPU=1`
+- `tiphd-py310` conda env (Python 3.10) — Statescope only (use a CUDA PyTorch build for tractable runtimes)
 - Install scripts: `$ROOT/_toolkit/install_R_packages.R`, `$ROOT/_toolkit/install_python_packages.sh`
 
 ### 3. Download data — follow `setup-data/SKILL.md`
@@ -87,8 +87,12 @@ Refer to `run-benchmark/SKILL.md` for the canonical algorithm → environment ma
 
 - **Per-pair timeout** defaults to 7200 s (`TIPHD_PAIR_TIMEOUT`). The GC dataset has ~137 K cells (3–6× the others); its pairs are much slower and can be run directly without the batch timeout.
 - **R/Seurat version is hard-required**: R ≥ 4.4 and Seurat ≥ 5 with Matrix ≥ 1.6.4; R 4.1/Seurat 4 cannot read the Assay5 data correctly.
-- **GPU**: SIDISH, Statescope, and TiRank auto-detect CUDA and are much faster on a GPU. Install a CUDA build of PyTorch in their env. SCAD/scDEAL/scSurv/scTREND default to CPU.
+- **GPU**: SIDISH and Statescope auto-detect CUDA; TiRank is opt-in via `TIRANK_GPU=1` (its default env ships CPU-only PyTorch). Install a CUDA build of PyTorch in the relevant env. SCAD/scDEAL/scSurv/scTREND default to CPU.
+- **TiRank clinical-table contract**: the bulk clinical CSV must be exactly `[time, event]` two columns — TiRank selects columns by position, and its per-gene Cox failures are swallowed by `except: continue`, surfacing much later as a misleading `0 Risk genes` error. The run script auto-trims the TiPhD tables via `_toolkit/config.py`; custom data needs the same treatment.
+- **Statescope scaling**: BLADE cost grows with the number of annotated cell types (not bulk sample count); high-cell-type datasets at the default `Nrep=10` can be impractically slow even on a GPU. Its progress log is just bare EM iteration numbers, and it has no checkpoint. `STATESCOPE_NREP=1` exists only for explicitly-labelled end-to-end smoke runs; benchmark results always use the default 10.
+- **No checkpoints**: SIDISH, TiRank, and Statescope pairs restart from scratch when killed; only pairs whose output CSV already exists are skipped. Launch long pairs from a resilient session.
+- **Memory**: benchmark `.h5ad` files can store dense `X`; the Python run scripts stream these in backed mode as CSR (memory-layout change only, values untouched), so prefer the bundled run scripts over ad-hoc loading.
 - **Gold-standard filename quirk**: the file is `gold_standard_all_LUDA.csv` (original spelling, not `LUAD`) — do not rename.
 - **AML bulk names** are `TCGA`, `wave12`, `wave34` (not GSE ids).
 
-Do not modify algorithm parameters. If a pair fails, follow that algorithm's Troubleshooting table in its own SKILL.md.
+Do not modify algorithm parameters or hyperparameters (input-alignment trimming and storage layout are not parameter changes). The sole sanctioned non-default knob is `STATESCOPE_NREP` for labelled smoke runs. If a pair fails, follow that algorithm's Troubleshooting table in its own SKILL.md.

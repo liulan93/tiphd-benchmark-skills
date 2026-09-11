@@ -1,4 +1,4 @@
-"""TiRank 批量调度：逐配对独立进程运行 run_TiRank_pair.py（真·基因对+神经网络，输出 Rank_Label）"""
+"""TiRank batch runner: invoke run_TiRank_pair.py in a separate subprocess per pair (gene-pair network + neural net; outputs Rank_Label)"""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_toolkit"))
 import config

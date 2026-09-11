@@ -159,15 +159,17 @@ $SKILL_ROOT/<algo>/<cancer>/<algo>_<cancer>_final_metrics.csv
 | 算法 | 特殊点 |
 |------|--------|
 | scAB | plus_only=TRUE（无 Rank-），Coverage 偏低是预期 |
-| SIDISH | plus_only=TRUE（同上），Python 跑、CPU only（`CUDA_VISIBLE_DEVICES=""`） |
+| SIDISH | plus_only=TRUE（同上），Python 跑、**GPU 自动检测**（有 CUDA 版 torch 即用 GPU，无则回退 CPU），无 checkpoint，杀进程整对重跑 |
 | scPAS | 算法内部**自带 2000 次置换**，evaluate 不再做细胞级置换（但仍跑 `permute_cell_level` —— 那是评估层的统一骨架，可接受） |
 | Scissor | R 算法，需 Seurat ≥ 5.0；run 脚本内部将 Assay5 转为 Assay 以兼容 |
 | scSTAR2 | source `scstar2/src/` 的 9 个 R 函数；包内含本地 patch（PLSconstruct/OPLSDA） |
 | SCAD / scDEAL | torch 二分类，CPU 也行（自动 CPU） |
 | MuSiC / scPER / Statescope | B 类，只做反卷积；样本级置换在 evaluate 完成 |
-| **TiRank** | **必须用 tiphd-stats conda env**（Python 3.9 + lifelines/optuna/leidenalg/python-igraph）。临床列需抽成 2 列 [time, event]。**官方建议 GPU**，CPU 慢但能跑。 |
+| MuSiC / scPER | B 类，只做反卷积；样本级置换在 evaluate 完成 |
+| **Statescope** | B 类反卷积，**必须 tiphd-py310**（Python 3.10+）。耗时由细胞**类型数**主导（而非样本数），高类型数数据默认 Nrep=10 可能极慢，宜绕过批量超时直接跑；进度只有裸迭代号、AutoGeneS 阶段长时间静默均正常；无 checkpoint。`STATESCOPE_NREP=1` 仅用于显式标注的冒烟验证，不可当基准结果 |
+| **TiRank** | **用 tiphd-stats conda env**（Python 3.9 + lifelines/optuna/leidenalg/python-igraph）。临床表必须恰好 2 列 [time, event]——run 脚本已按 config 的 tcol/scol 自动裁剪（自定义数据要自己保证两列）。GPU 需显式 `TIRANK_GPU=1` 且 env 内是 CUDA 版 torch（默认 yml 装的是 cpuonly）；CPU 能跑但慢 |
 | AML | bulk 名是 `TCGA` / `wave12` / `wave34`（非 GSE 编号） |
-| GC | `GSE183904` 137K 细胞，可能慢 |
+| GC | `GSE183904` 137K 细胞，TiRank/SIDISH 可能数小时；Statescope 的主要瓶颈则是细胞类型数而非细胞数 |
 | LUDA 文件名 | `gold_standard_all_LUDA.csv`（原始拼写，**不是** LUAD） |
 
 ---
@@ -192,9 +194,12 @@ $SKILL_ROOT/<algo>/<cancer>/<algo>_<cancer>_final_metrics.csv
 | `ModuleNotFoundError: tirank` | 在 TiRank env 跑 `pip install -e third_party/python/TiRank` |
 | batch 大量 FAIL（>30%） | 环境问题，先看 `_batch_log.txt` 第一条 FAIL 的 ERR |
 | evaluate 报 "missing X output" | batch 没产出该配对，**先**跑 batch |
-| 进程 TIMEOUT | 默认 7200s（2 小时，可由环境变量 `TIPHD_PAIR_TIMEOUT` 调整）；超大配对（如 GC 137K 细胞）可直接运行 `run_*_pair.*` 绕过批量超时 |
+| TiRank 报 `0 Risk genes and 0 Protective genes` | **先查临床表，不是信号弱**：必须恰好 [time, event] 两列（run 脚本已自动裁剪 TiPhD 数据）；上游 `except: continue` 会吞掉真实 Cox 异常，可手动拟合一次 CoxPH 看报错。详见 tirank/SKILL.md |
+| Statescope 长时间无输出 / 疑似卡死 | AutoGeneS 阶段静默、BLADE 只打裸迭代号、EM 各轮耗时不均都正常；看 GPU 活跃度/CPU 时间判断是否真挂。高细胞类型数数据默认配置可能极慢；只有冒烟验证才用 `STATESCOPE_NREP=1` 并标注非默认 |
+| 进程 TIMEOUT | 默认 7200s（2 小时，可由环境变量 `TIPHD_PAIR_TIMEOUT` 调整）；超大配对（如 GC 137K 细胞、高细胞类型数的 Statescope）可直接运行 `run_*_pair.*` 绕过批量超时 |
 | `modelscope` 缺失（setup-data） | `pip install modelscope` |
-| 单个癌种 OOM | 通常是 GC 的 137K 细胞；加内存或减少线程 |
+| 单个癌种 OOM / 读 h5ad 后无 traceback 被杀 | 多为 dense X 展开（GC 137K 细胞最甚）；TiRank/SIDISH 的 run 脚本已内置 backed→CSR 流式读取，确认用的是随 skill 附带的 run 脚本；再考虑加内存或限制线程 |
+| 进程被杀后重跑从头开始 | 预期行为：SIDISH/TiRank/Statescope 均无 checkpoint；只有已产出 CSV 的配对会被跳过，未完成对整对重来（Statescope 连 AutoGeneS 也重跑），长任务放在可靠会话里启动 |
 
 ---
 

@@ -80,6 +80,21 @@ Every algorithm follows the same three stages:
 
 The batch per-pair timeout defaults to **7200 s**, configurable with `TIPHD_PAIR_TIMEOUT`. The GC dataset has ~137 K cells (3–6× the other cancers), so its pairs are much slower; large pairs can also be run directly without the batch timeout.
 
+### Useful environment variables
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `TIPHD_DATA_DIR` / `TIPHD_OUT_DIR` | `./data` / `./results` | Data and output roots |
+| `TIPHD_PAIR_TIMEOUT` | `7200` | Per-pair batch timeout in seconds |
+| `TIRANK_GPU` | unset (CPU) | `=1` lets TiRank use CUDA (env must contain a CUDA PyTorch build) |
+| `STATESCOPE_NREP` | `10` | BLADE ensemble size; set to `1` only for explicitly-labelled smoke runs, never for benchmark numbers |
+
+## Practical notes
+
+- **TiRank** requires the bulk clinical CSV to be exactly two columns `[time, event]` (columns are picked by position). The run script auto-trims the shipped TiPhD tables via `_toolkit/config.py`; the upstream `except: continue` otherwise turns this mistake into a misleading `0 Risk genes` error.
+- **Statescope/BLADE** runtime scales with the number of annotated cell types (not bulk sample count); high-cell-type datasets at full defaults (`Nrep=10`) can be impractically slow even on a GPU. The AutoGeneS stage is quiet while it runs, BLADE logs only bare EM iteration numbers, and there is no checkpoint — killed pairs restart from the beginning.
+- The long-running Python pairs (SIDISH, TiRank, Statescope) have no checkpoint; completed pairs are skipped via their output CSV. Run them from a resilient session.
+
 ## Metrics
 
 Each cancer produces Precision, Coverage (recall), and False Rate against a curated gold standard.
@@ -88,4 +103,4 @@ Each cancer produces Precision, Coverage (recall), and False Rate against a cura
 
 - **R ≥ 4.4 + Seurat ≥ 5** (data is stored as Seurat v5 Assay5 `.rds`; R 4.1/Seurat 4 cannot read it correctly)
 - Python environments per the `setup-env` skill (3.9 for most tools, 3.10+ for Statescope)
-- A CUDA GPU is optional but strongly recommended for the PyTorch tools (SIDISH, scTREND, scSurv, SCAD, scDEAL, TiRank, Statescope)
+- A CUDA GPU is optional but strongly recommended for the PyTorch tools (SIDISH, scTREND, scSurv, SCAD, scDEAL, TiRank, Statescope). SIDISH/Statescope auto-detect CUDA; TiRank needs `TIRANK_GPU=1` and a CUDA PyTorch in its env (the shipped `environment-tirank.yml` installs CPU-only torch)

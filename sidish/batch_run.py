@@ -1,4 +1,4 @@
-"""SIDISH 批量调度：逐配对独立进程运行 run_SIDISH_pair.py"""
+"""SIDISH batch runner: invoke run_SIDISH_pair.py in a separate subprocess per pair"""
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_toolkit"))
 import config

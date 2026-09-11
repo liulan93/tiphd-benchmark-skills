@@ -1,6 +1,6 @@
-"""SIDISH — 单配对运行器（VAE + DeepCox）
-用法: python run_SIDISH_pair.py <cancer> <sc_name> <bulk_name>
-单细胞数据不子采样，读取完整细胞。只输出 Rank+ / Background。"""
+"""SIDISH — single-pair runner (VAE + DeepCox)
+Usage: python run_SIDISH_pair.py <cancer> <sc_name> <bulk_name>
+Single-cell data is used in full (no downsampling). Outputs Rank+ / Background only."""
 import sys, os, warnings, time
 import numpy as np
 import pandas as pd
@@ -19,10 +19,10 @@ from SIDISH.SIDISH import SIDISH, preprocess
 ALGO = "SIDISH"
 cancer, sc_name, bulk_name = sys.argv[1], sys.argv[2], sys.argv[3]
 cc = config.CANCERS[cancer]
-# 自动检测 GPU：有 CUDA 则用 GPU（VAE/DeepCox 可提速 10-50 倍），否则回退 CPU
+# Auto-detect GPU: use CUDA when available, otherwise fall back to CPU
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# 各癌种的病人列名（SIDISH 需要）
+# Patient column per cancer (required by SIDISH)
 patient_col = {"AML": "orig.ident", "CRC": "orig.ident", "HCC": "patient",
                "LUAD": "orig.ident", "GC": "orig.ident"}[cancer]
 
@@ -36,20 +36,21 @@ if os.path.exists(out_csv):
 print(f"===== SIDISH {cancer} | {sc_name} | {bulk_name} =====")
 t0 = time.time()
 
-# ── 1. 载入 scRNA（完整，不子采样） ────────────────────────────
+# ── 1. Load scRNA (full, no downsampling) ─────────────────────
 adata = anndata.read_h5ad(os.path.join(config.DATA_DIR, "scRNA", cancer, f"{sc_name}.h5ad"))
-if hasattr(adata.X, "toarray"):
-    adata.X = adata.X.toarray()
-adata.X = adata.X.astype(np.float32)
+# [TiPhD benchmark] Memory layout only (values unchanged): normalize on the sparse
+# matrix first, and densify only after the <=2000-gene filter below, so the full dense
+# matrix is never materialized on the largest references (SIDISH's internal copies
+# would otherwise make OOM likely).
 sc.pp.normalize_total(adata, target_sum=1e4)
 sc.pp.log1p(adata)
 if patient_col not in adata.obs.columns:
     adata.obs[patient_col] = "batch1"
 adata.obs["celltype_major"] = adata.obs[cc["ct_col"]].astype(str) \
     if cc["ct_col"] in adata.obs.columns else "Unknown"
-print(f"  scRNA: {adata.n_obs} cells x {adata.n_vars} genes (完整)")
+print(f"  scRNA: {adata.n_obs} cells x {adata.n_vars} genes (full)")
 
-# ── 2. 载入 bulk + clinical ───────────────────────────────────
+# ── 2. Load bulk + clinical ───────────────────────────────────
 bulk_exp = pd.read_csv(os.path.join(config.DATA_DIR, "bulk", cancer, "exp", f"{bulk_name}_exp.csv"), index_col=0)
 clinical = pd.read_csv(os.path.join(config.DATA_DIR, "bulk", cancer, "clinical", f"{bulk_name}_clinical.csv"), index_col=0)
 common = bulk_exp.columns.intersection(clinical.index)
@@ -65,6 +66,11 @@ else:
     top_genes = common_genes.tolist()
 adata = adata[:, adata.var_names.astype(str).isin(top_genes)].copy()
 bulk_t = bulk_t[adata.var_names.astype(str)]
+# [TiPhD benchmark] Densify now (float32) that the matrix is filtered to <=2000 genes;
+# numerically identical to densifying before normalization, only memory layout differs.
+if hasattr(adata.X, "toarray"):
+    adata.X = adata.X.toarray()
+adata.X = adata.X.astype(np.float32)
 print(f"  Final: {adata.n_obs} cells x {adata.n_vars} genes")
 
 survival_df = clinical[[cc["tcol"], cc["scol"]]].copy()
@@ -73,14 +79,15 @@ survival_df["Overall_survival_days"] = survival_df["Overall_survival_days"].asty
 survival_df["Sample_Status"] = survival_df["Sample_Status"].astype(int)
 survival_df.index = survival_df.index.astype(str)
 
-# ── 3. 预处理（processed=True，跳过内部归一化） ─────────────────
+# ── 3. Preprocess (processed=True skips internal normalization) ─
 adata_pp, bulk_pp = preprocess(
     adata, bulk_t, survival_df,
     patient_id=patient_col, celltype_name="celltype_major",
     processed=True, survival_="Overall_survival_days", status="Sample_Status")
 
-# ── 4. 训练 SIDISH（CPU 快速模式） ─────────────────────────────
-# lr 降为 3e-4/2e-4 避免 NaN（之前 lr=1e-3 在 epoch 95 后 loss 爆炸）
+# ── 4. Train SIDISH ───────────────────────────────────────────
+# Lower learning rates (3e-4/2e-4) for training stability; avoid 1e-3, where the
+# adversarial loss can diverge to NaN late in training.
 sidish = SIDISH(adata_pp, bulk_pp, device=device, seed=42, use_spatial_graph=False)
 sidish.init_Phase1(epochs=50, i_epochs=50, latent_size=32, layer_dims=[128, 64],
                    batch_size=min(64, adata_pp.n_obs), optimizer="Adam", lr=3e-4,
@@ -92,7 +99,7 @@ os.makedirs(path, exist_ok=True)
 adata_result = sidish.train(iterations=50, percentile=0.2, steepness=2.0,
                             path=path, num_workers=0, show=False)
 
-# ── 5. 输出（仅 Rank+ / Background） ───────────────────────────
+# ── 5. Output (Rank+ / Background only) ───────────────────────
 result_df = pd.DataFrame({"Cell_ID": adata_result.obs_names,
                           cc["ct_col"]: adata_result.obs[cc["ct_col"]].values
                           if cc["ct_col"] in adata_result.obs.columns

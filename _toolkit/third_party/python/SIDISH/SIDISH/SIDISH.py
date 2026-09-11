@@ -545,8 +545,10 @@ class SIDISH:
 
             self.adata = self.adata_.copy()
 
-            print("########################################## Saving Weight Matrix at Iteration {} ##########################################".format(i))
-            pd.DataFrame(self.W_matrix).to_csv("{}W_matrix_{}.csv".format(self.path,i))
+            # [TiPhD benchmark] 诊断性 W_matrix CSV（cells×genes，单文件可达数百 MB；
+            # 从不回读，续训仅用 vae_transfer/deepCox state_dict）已禁用以避免写爆磁盘。
+            # print("########################################## Saving Weight Matrix at Iteration {} ##########################################".format(i))
+            # pd.DataFrame(self.W_matrix).to_csv("{}W_matrix_{}.csv".format(self.path,i))
             
             if i == (iterations - 1):
                 print("########################################## SIDISH TRAINING DONE ##########################################")
@@ -572,8 +574,10 @@ class SIDISH:
         torch.save(self.deepCox_model.model.state_dict(), "{}deepCox".format(self.path))
 
         print("########################################## Saving Final AnnData Object ##########################################")
-        fn = "{}adata_SIDISH.h5ad".format(self.path)
-        self.adata.write_h5ad(fn, compression="gzip")
+        # [TiPhD benchmark] 诊断性 adata h5ad 落盘已禁用（run 脚本只用返回值；
+        # 全量 44 对时该文件体积过大）。最终输出以 run 脚本的 *_Rank CSV 为准。
+        # fn = "{}adata_SIDISH.h5ad".format(self.path)
+        # self.adata.write_h5ad(fn, compression="gzip")
         return self.adata
 
     

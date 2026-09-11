@@ -1,4 +1,4 @@
-# TiRank 评估（细胞级）
+# TiRank evaluation (cell-level)
 .ca <- commandArgs(trailingOnly = FALSE)
 SCRIPT_DIR <- normalizePath(dirname(sub("^--file=", "", grep("^--file=", .ca, value = TRUE)[1])), winslash = "/")
 source(file.path(SCRIPT_DIR, "..", "_toolkit", "config.R"))
