@@ -66,6 +66,12 @@ The resulting layout is `.claude/skills/tiphd-benchmark-skills/<algorithm>/SKILL
 cd music
 python batch_run.py      # stage 2: run all 44 (scRNA, bulk) pairs
 Rscript evaluate.R       # stage 3: permutation test + gold-standard metrics
+
+# — or run every algorithm at once —
+bash run_all.sh                 # batch stage for all 16 (right interpreter per tool)
+bash run_evaluate_all.sh        # evaluation stage for all 16
+bash run_all.sh music scab      # restrict to selected tools
+R_ONLY=1 bash run_all.sh        # R tools only; PY_ONLY=1 for Python tools
 ```
 
 Run from the project working directory; data defaults to `./data` and results to `./results`, overridable via `TIPHD_DATA_DIR` / `TIPHD_OUT_DIR`.

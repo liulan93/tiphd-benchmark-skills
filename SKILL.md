@@ -1,6 +1,6 @@
 ---
 name: tiphd-benchmark-skills
-description: TiPhD benchmark suite for 16 single-cell phenotype-association and bulk-deconvolution algorithms (MuSiC, ScPP, scSTAR2, SCAD, SCIPAC, scDEAL, scSurv, scTREND, scAB, Scissor, scPAS, PIPET, SIDISH, scPER, Statescope, TiRank) across 5 cancers (AML/CRC/HCC/LUAD/GC). Use when the user wants to set up environments, download the TiPhD test data, or run/evaluate any of these algorithms end-to-end (batch_run.py -> evaluate.R -> Precision/Coverage/False-Rate metrics). Triggers on "跑评测", "运行算法", "run benchmark", "TiPhD", an algorithm name, or installing/setting up the benchmark.
+description: TiPhD benchmark suite for 16 single-cell phenotype-association and bulk-deconvolution algorithms (MuSiC, ScPP, scSTAR2, SCAD, SCIPAC, scDEAL, scSurv, scTREND, scAB, Scissor, scPAS, PIPET, SIDISH, scPER, Statescope, TiRank) across 5 cancers (AML/CRC/HCC/LUAD/GC). Use for setting up environments, downloading the TiPhD test data, or running/evaluating any algorithm end-to-end (batch_run.py -> evaluate.R -> Precision/Coverage/False-Rate metrics), including running ALL tools at once. Natural-language entry point: "用xx skill跑评测", "运行所有评测工具", "run all benchmarks", "跑评测", "运行算法", an algorithm name, or installing/setting up the benchmark.
 ---
 
 # TiPhD Benchmark Skills
@@ -82,6 +82,36 @@ Rscript evaluate.R          # 5 cancers, one *_final_metrics.csv each
 Single pair: `Rscript run_<ALGO>_pair.R <cancer> <sc_name> <bulk_name>` or the Python equivalent.
 
 Refer to `run-benchmark/SKILL.md` for the canonical algorithm → environment map, the 44 pair list, and natural-language command routing.
+
+### 5. Common natural-language requests
+
+When the user phrases a request in natural language, map it to these commands. `$ROOT` is this repository directory.
+
+| User says | Action |
+|-----------|--------|
+| "安装环境 / setup env / install dependencies" | Follow `setup-env/SKILL.md` (R env + conda envs) |
+| "下载数据 / download the data" | Follow `setup-data/SKILL.md` (ModelScope → `./data`) |
+| "用 \<algo\> 跑评测 / run \<algo\>" | `cd $ROOT/<algo>` then `python batch_run.py` with the correct interpreter, then `Rscript evaluate.R` |
+| "只跑某个癌种 / run \<algo\> on \<cancer\>" | Run the pair runner for that cancer, then `Rscript evaluate.R <cancer>` |
+| "运行所有评测工具 / run all algorithms / benchmark everything" | `bash $ROOT/run_all.sh` (batch) then `bash $ROOT/run_evaluate_all.sh` (evaluation) |
+| "只跑 R 类 / Python 类工具" | `R_ONLY=1 bash run_all.sh` or `PY_ONLY=1 bash run_all.sh` |
+| "汇总结果 / collect metrics" | `bash $ROOT/run_evaluate_all.sh`, then read each `results/<algo>/<cancer>/*_final_metrics.csv` |
+
+Two convenience drivers are provided at the repository root:
+
+- **`run_all.sh`** — runs every tool's `batch_run.py`, selecting the interpreter per tool (system `Rscript` for R tools; the `tiphd-torch`, `tiphd-stats`, `tiphd-py310` conda envs for Python tools). Accepts a list of tool names to restrict the run, or `R_ONLY=1` / `PY_ONLY=1`. It is idempotent (finished pairs are skipped) and prints a failure summary.
+- **`run_evaluate_all.sh`** — runs `evaluate.R` for every tool and writes the per-cancer `*_final_metrics.csv`.
+
+Activate the environments before calling them: an R ≥ 4.4 + Seurat 5 environment exposing `Rscript` on `PATH`, plus the three conda envs. Set `TIRANK_GPU=1` in the environment to run TiRank on GPU; Statescope/SIDISH auto-detect CUDA.
+
+### 6. Algorithm → environment quick map
+
+| Tool(s) | Interpreter / env |
+|---------|-------------------|
+| music, scpp, scstar2, scab, scipac, scissor, scpas, pipet | Rscript (R ≥ 4.4 + Seurat 5) |
+| scad, scdeal, scsurv, sctrend, sidish, scper | `tiphd-torch` python (SIDISH auto-uses GPU) |
+| tirank | `tiphd-stats` python (set `TIRANK_GPU=1` for GPU) |
+| statescope | `tiphd-py310` python (Python 3.10+, auto-uses GPU) |
 
 ## Important notes
 
